@@ -1,1 +1,77 @@
 
+require(foreign)
+require(sqldf)
+## DEPENDENT VARIABLE: Low weight
+## IND Variables: Mothers data 
+## MODELS SUGGESTED: LOGIT, CLASS TREES, RANDOM FOREST, BART, 
+
+
+data<-read.csv("NACIMIENTO.csv", header = FALSE)
+vars <-(read.csv("variables.csv"))
+name<-as.array(vars[,1])
+names(data) <- (name)
+data$APGARH[data$APGARH==99]<-NA
+data$PESOH[data$PESOH==9999]<-NA
+data$EDAD_MADRE[data$EDAD_MADRE==9]<-NA
+data$EDAD_MADRE[data$EDAD_MADRE==99]<-NA
+data$EDAD_MADRE[data$EDAD_MADRE==999]<-NA
+
+data$NIV_ESCOL[data$NIV_ESCOL==99] <- NA
+data$NIV_ESCOL[data$NIV_ESCOL==88] <- NA
+
+data$EDOCIVIL[data$EDOCIVIL==99] <- NA
+data$EDOCIVIL[data$EDOCIVIL==88] <- NA
+
+data$ENT_RES[data$ENT_RES==99] <- NA
+
+range(data$EDOCIVIL, na.rm = TRUE)
+
+
+
+names(data)
+data_red <- data[sample(dim(data)[1],size = 100000),]
+data_red$edad_sq <- NA
+data_red$edad_sq <- (data_red$EDAD_MADRE)^2
+
+glm <- glm(PESOH ~ as.factor(ENT_RES) + as.factor(EDOCIVIL) + as.factor(ATEN_PREN) + as.factor(NIV_ESCOL) + as.factor(TRAB_ACT) + EDAD_MADRE +edad_sq, data = data_red)
+
+
+summary(glm)
+
+range(data$EDAD_MADRE,na.rm = TRUE)
+mean(data$PESOH<2500,na.rm = TRUE)
+mean(data$PESOH[data$EDAD_MADRE==27],na.rm = TRUE)
+hist(data$EDAD_MADRE)
+View(data)
+
+range(data$APGARH[is.NA])
+summary(data$EDAD_MADRE)
+sqldf("select count(*),CEDOCVE, avg(pesoh),avg(edad_MADRE),avg(APGARH)
+from data
+group by CEDOCVE
+order by 1 desc")
+
+prems <- sqldf("select count(*) as Number,EDAD_MADRE as Edad, avg(pesoh) as Peso,avg(APGARH) as Apgar
+      from data
+      where pesoh < 2500
+      group by EDAD_MADRE
+      
+      order by 2 asc")
+age_table <- sqldf("select count(*) as Number,EDAD_MADRE as Edad, avg(pesoh) as Peso,avg(APGARH) as Apgar
+      from data
+               group by EDAD_MADRE
+               order by 2 asc")
+
+age_prems <- sqldf("select age_table.Edad, prems.Number as Low_weight, 
+            age_table.Number as Total
+            from age_table
+            join prems on prems.Edad = age_table.Edad")
+names(age)
+age_prems$ratio<- as.numeric(age_prems$Low_weight/age_prems$Total)
+
+plot(age_prems$Edad[1:39],age_prems$ratio[1:39],type = "l")
+
+sqldf("select count(*),EDAD_MADRE, avg(pesoh),avg(APGARH)
+      from data
+      group by EDAD_MADRE
+      order by 2 asc")
