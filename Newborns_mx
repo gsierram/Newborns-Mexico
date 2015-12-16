@@ -1,65 +1,143 @@
-
 require(foreign)
 require(sqldf)
 ## DEPENDENT VARIABLE: Low weight
 ## IND Variables: Mothers data 
 ## MODELS SUGGESTED: LOGIT, CLASS TREES, RANDOM FOREST, BART, 
 
+setwd("/Users/erica_kilbride/Dropbox/Newborns mexico")
+data<-read.csv("Births.csv", header = TRUE)
+data <- data[,-1]
 
-data<-read.csv("NACIMIENTO.csv", header = FALSE)
-vars <-(read.csv("variables.csv"))
-name<-as.array(vars[,1])
-names(data) <- (name)
 data$APGARH[data$APGARH==99]<-NA
-data$PESOH[data$PESOH==9999]<-NA
-data$EDAD_MADRE[data$EDAD_MADRE==9]<-NA
-data$EDAD_MADRE[data$EDAD_MADRE==99]<-NA
-data$EDAD_MADRE[data$EDAD_MADRE==999]<-NA
+data$Weight[data$Weight==9999]<-NA
+data$Mother_age[data$Mother_age==9]<-NA
+data$Mother_age[data$Mother_age==99]<-NA
+data$Mother_age[data$Mother_age==999]<-NA
 
-data$NIV_ESCOL[data$NIV_ESCOL==99] <- NA
-data$NIV_ESCOL[data$NIV_ESCOL==88] <- NA
+data$Edu_level[data$Edu_level==99] <- NA
+data$Edu_level[data$Edu_level==88] <- NA
 
-data$EDOCIVIL[data$EDOCIVIL==99] <- NA
-data$EDOCIVIL[data$EDOCIVIL==88] <- NA
+data$Marital_st[data$Marital_st==99] <- NA
+data$Marital_st[data$Marital_st==88] <- NA
 
-data$ENT_RES[data$ENT_RES==99] <- NA
-
-range(data$EDOCIVIL, na.rm = TRUE)
+data$Residence_st[data$Residence_st==99] <- NA
 
 
-
-names(data)
-data_red <- data[sample(dim(data)[1],size = 100000),]
-data_red$edad_sq <- NA
-data_red$edad_sq <- (data_red$EDAD_MADRE)^2
-
-glm <- glm(PESOH ~ as.factor(ENT_RES) + as.factor(EDOCIVIL) + as.factor(ATEN_PREN) + as.factor(NIV_ESCOL) + as.factor(TRAB_ACT) + EDAD_MADRE +edad_sq, data = data_red)
+range(data$Marital_st, na.rm = TRUE)
 
 
+
+
+
+
+d.new <- data[c( -2, -3, -4, -27, -33, -34, -35, -36, -37,-38, -39,-48, -53, -54, -55, -56, -57, -58, -60)]
+names(d.new)
+d.new <-na.omit(d.new)
+d.new$Low_weight <- ifelse(d.new$Weight<3000, 1, 0)
+data_red <- d.new[sample(dim(d.new)[1],size = 100000),]
+data_red$age_sq <- NA
+data_red$age_sq <- (data_red$Mother_age)^2
+
+#Split Data
+indexes <- sample(1 : nrow(data_red), size = 0.3 * nrow(data_red))
+testing <- data_red[indexes, ]
+training <- data_red[-indexes, ]
+
+#Descriptive Stats
+range(d.new$Mother_age)
+mean(d.new$Weight<2800)
+mean(d.new$Weight[data$Mother_age==27])
+hist(d.new$Mother_age)
+hist(training$Low_weight)
+
+
+#Linear Regression
+glm <- glm(Low_weight ~ povrate + as.factor(Residence_st) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq, data = training)
 summary(glm)
 
-range(data$EDAD_MADRE,na.rm = TRUE)
-mean(data$PESOH<2500,na.rm = TRUE)
-mean(data$PESOH[data$EDAD_MADRE==27],na.rm = TRUE)
-hist(data$EDAD_MADRE)
-View(data)
+
+#predict
+y_hat_glm <- predict(glm, newdata = testing)
+summary(y_hat_glm)
+z_glm <- as.integer(y_hat_glm > 0.11)
+table(testing$Low_weight, z_glm)
+
+#Logistic Regression
+logit <- glm(Low_weight ~  povrate + as.factor(Residence_st) + as.factor(Pren_care) + as.factor(Works) + Mother_age +age_sq, data = training, family = binomial)
+summary(logit)
+
+#predict
+y_hat_logit <- predict(logit, newdata = testing)
+y_hat_logit <- 1 / exp(-y_hat_logit)
+summary(y_hat_logit)
+z_logit <- as.integer(y_hat_logit > 0.20)
+table(testing$Low_weight, z_logit)
+
+#Step
+?step
+
+glm_step <- glm(Low_weight ~ povrate + as.factor(Residence_st) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) + Birth_order + as.factor(Ins_Eleg) + Num_preg, data = training)
+
+glm_subset <- step(glm_step, trace = FALSE)
+names(coef(glm_subset))
+setdiff(names(coef(glm_step)), names(coef(glm_subset)))
+
+#prediction
+
+y_hat_step <- predict(glm_subset, newdata = testing)
+summary(y_hat_logit)
+z_logit <- as.integer(y_hat_logit > 0.10)
+table(testing$Low_weight, z_logit)
+
+#Classification
+form = Low_weight ~povrate + as.factor(Pren_care) + as.factor(Edu_level) +  Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) +  as.factor(Ins_Eleg)
+
+require(tree)
+require(rpart)
+out <- tree(Low_weight ~povrate + as.factor(Pren_care) + as.factor(Edu_level) +  Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) +  as.factor(Ins_Eleg), data = training)
+?tree
+
+out1 <- rpart(Low_weight ~povrate + as.factor(Pren_care) + as.factor(Edu_level) +  Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) +  as.factor(Ins_Eleg), data = training)
+
+summary(out1)
+plot(out1)
+text(out, pretty = 1)
+
+#Bag/RF
+
+library(randomForest)
+
+bagged <- randomForest(Low_weight ~povrate + as.factor(training$Pren_care) + as.factor(training$Edu_level) +  training$Mother_age +training$age_sq + training$Number_visits  + as.factor(training$Last_baby_lives) +  as.factor(training$Ins_Eleg), data = training,  importance = TRUE)
+bagged
+pb <- plot(bagged)
+legend("topright", legend = colnames(pb), col = 1:3, lty = 1:3)
+varImpPlot(bagged)
+bag_predictions <- predict(bagged, newdata = testing1, type = "class")
+table(testing1$y, bag_predictions)
+
+#Neural Networks
+
+
+
+
+
 
 range(data$APGARH[is.NA])
-summary(data$EDAD_MADRE)
-sqldf("select count(*),CEDOCVE, avg(pesoh),avg(edad_MADRE),avg(APGARH)
+summary(data$Mother_age)
+sqldf("select count(*),CEDOCVE, avg(Weight),avg(Mother_age),avg(APGARH)
 from data
 group by CEDOCVE
 order by 1 desc")
 
-prems <- sqldf("select count(*) as Number,EDAD_MADRE as Edad, avg(pesoh) as Peso,avg(APGARH) as Apgar
+prems <- sqldf("select count(*) as Number,Mother_age as Edad, avg(Weight) as Peso,avg(APGARH) as Apgar
       from data
-      where pesoh < 2500
-      group by EDAD_MADRE
+      where Weight < 2500
+      group by Mother_age
       
       order by 2 asc")
-age_table <- sqldf("select count(*) as Number,EDAD_MADRE as Edad, avg(pesoh) as Peso,avg(APGARH) as Apgar
+age_table <- sqldf("select count(*) as Number,Mother_age as Edad, avg(Weight) as Peso,avg(APGARH) as Apgar
       from data
-               group by EDAD_MADRE
+               group by Mother_age
                order by 2 asc")
 
 age_prems <- sqldf("select age_table.Edad, prems.Number as Low_weight, 
@@ -71,7 +149,10 @@ age_prems$ratio<- as.numeric(age_prems$Low_weight/age_prems$Total)
 
 plot(age_prems$Edad[1:39],age_prems$ratio[1:39],type = "l")
 
-sqldf("select count(*),EDAD_MADRE, avg(pesoh),avg(APGARH)
+sqldf("select count(*),Mother_age, avg(Weight),avg(APGARH)
       from data
-      group by EDAD_MADRE
+      group by Mother_age
       order by 2 asc")
+
+
+
