@@ -1,3 +1,12 @@
+---
+title: "DataMiningFinal"
+author: "Erica Kilbride"
+date: "December 12, 2015"
+output: html_document
+---
+
+```{r}
+
 require(foreign)
 require(sqldf)
 ## DEPENDENT VARIABLE: Low weight
@@ -7,6 +16,10 @@ require(sqldf)
 setwd("/Users/erica_kilbride/Dropbox/Newborns mexico")
 data<-read.csv("Births.csv", header = TRUE)
 data <- data[,-1]
+data <- data[,1:59]
+mydata1 <- read.csv("states to regions.csv")
+data <- merge(data, mydata1, by="Residence_st")
+
 
 data$APGARH[data$APGARH==99]<-NA
 data$Weight[data$Weight==9999]<-NA
@@ -19,26 +32,39 @@ data$Edu_level[data$Edu_level==88] <- NA
 
 data$Marital_st[data$Marital_st==99] <- NA
 data$Marital_st[data$Marital_st==88] <- NA
+data$Works[data$Works==9]<-NA
+data$Works[data$Works==8]<-NA
 
-data$Residence_st[data$Residence_st==99] <- NA
 
+data$Residence_cty[data$Residence_cty==999] <-NA
+
+data$Pren_care[data$Pren_care==9]<-NA
+#data$First_visit_trim[data$First_visit_trim==9]<-NA
+data$Number_visits[data$Pren_care==99]<-NA
+data$Last_baby_lives[data$Last_baby_lives==9]<-NA
+data$Birth_order[data$Birth_order==99]<-NA
+#data$Last_baby_cond[data$Last_baby_cond==9]<-NA
 
 range(data$Marital_st, na.rm = TRUE)
-
-
-
-
-
 
 d.new <- data[c( -2, -3, -4, -27, -33, -34, -35, -36, -37,-38, -39,-48, -53, -54, -55, -56, -57, -58, -60)]
 names(d.new)
 d.new <-na.omit(d.new)
-d.new$Low_weight <- ifelse(d.new$Weight<3000, 1, 0)
+mydata2 <- read.csv("poverty counties.csv")
+d.new<-merge(d.new, mydata2, by="Residence_cty")
+d.new
+write.csv("Birth.csv")
+d.new <-na.omit(d.new)
+d.new$Low_weight <- ifelse(d.new$Weight<2800, 1, 0)
 data_red <- d.new[sample(dim(d.new)[1],size = 100000),]
 data_red$age_sq <- NA
 data_red$age_sq <- (data_red$Mother_age)^2
 
+
+
 #Split Data
+set.seed(1234)
+
 indexes <- sample(1 : nrow(data_red), size = 0.3 * nrow(data_red))
 testing <- data_red[indexes, ]
 training <- data_red[-indexes, ]
@@ -52,31 +78,63 @@ hist(training$Low_weight)
 
 
 #Linear Regression
-glm <- glm(Low_weight ~ povrate + as.factor(Residence_st) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq, data = training)
+glm <- glm(Low_weight ~ povrate + as.factor(Region) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq, data = training)
 summary(glm)
 
 
 #predict
 y_hat_glm <- predict(glm, newdata = testing)
 summary(y_hat_glm)
-z_glm <- as.integer(y_hat_glm > 0.11)
+z_glm <- as.integer(y_hat_glm > 0.3)
 table(testing$Low_weight, z_glm)
 
+
+pred <- prediction(y_hat_glm, testing$Low_weight)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model= "GLM")
+ggplot(roc.data, aes(x=fpr, ymin = 0, ymax = tpr)) +
+  geom_ribbon(alpha=0.2)+
+  geom_line(aes(y=tpr))+
+  ggtitle(paste0("ROC curve w/AUC=",auc))
+
 #Logistic Regression
-logit <- glm(Low_weight ~  povrate + as.factor(Residence_st) + as.factor(Pren_care) + as.factor(Works) + Mother_age +age_sq, data = training, family = binomial)
+logit <- glm(Low_weight ~  povrate + as.factor(Region) + as.factor(Pren_care) + as.factor(Works) + Mother_age +age_sq, data = training, family = binomial)
 summary(logit)
 
 #predict
 y_hat_logit <- predict(logit, newdata = testing)
 y_hat_logit <- 1 / exp(-y_hat_logit)
 summary(y_hat_logit)
-z_logit <- as.integer(y_hat_logit > 0.20)
+z_logit <- as.integer(y_hat_logit > 0.40)
 table(testing$Low_weight, z_logit)
 
-#Step
-?step
+library(ROCR)
+library(ggplot2)
 
-glm_step <- glm(Low_weight ~ povrate + as.factor(Residence_st) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) + Birth_order + as.factor(Ins_Eleg) + Num_preg, data = training)
+?prediction
+pred <- prediction(y_hat_logit, testing$Low_weight)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model= "logit")
+ggplot(roc.data, aes(x=fpr, ymin = 0, ymax = tpr)) +
+  geom_ribbon(alpha=0.2)+
+  geom_line(aes(y=tpr))+
+  ggtitle(paste0("ROC curve w/AUC=",auc))
+
+
+#Step
+
+
+glm_step <- glm(Low_weight ~ povrate + as.factor(Region) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) + Birth_order + as.factor(Ins_Eleg) + Num_preg, data = training)
 
 glm_subset <- step(glm_step, trace = FALSE)
 names(coef(glm_subset))
@@ -86,8 +144,20 @@ setdiff(names(coef(glm_step)), names(coef(glm_subset)))
 
 y_hat_step <- predict(glm_subset, newdata = testing)
 summary(y_hat_logit)
-z_logit <- as.integer(y_hat_logit > 0.10)
+z_logit <- as.integer(y_hat_step > 0.30)
 table(testing$Low_weight, z_logit)
+
+pred <- prediction(y_hat_step, testing$Low_weight)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values))
+ggplot(roc.data, aes(x=fpr, ymin = 0, ymax = tpr)) +
+  geom_ribbon(alpha=0.2)+
+  geom_line(aes(y=tpr))+
+  ggtitle(paste0("ROC curve w/AUC=",auc))
 
 #Classification
 form = Low_weight ~povrate + as.factor(Pren_care) + as.factor(Edu_level) +  Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) +  as.factor(Ins_Eleg)
@@ -107,48 +177,38 @@ text(out, pretty = 1)
 
 library(randomForest)
 
-bagged <- randomForest(Low_weight ~povrate + as.factor(training$Pren_care) + as.factor(training$Edu_level) +  training$Mother_age +training$age_sq + training$Number_visits  + as.factor(training$Last_baby_lives) +  as.factor(training$Ins_Eleg), data = training,  importance = TRUE)
+bagged <- randomForest(Low_weight ~povrate  + Edu_level +  Mother_age , data = training,  importance = TRUE)
 bagged
 pb <- plot(bagged)
+pb
 legend("topright", legend = colnames(pb), col = 1:3, lty = 1:3)
 varImpPlot(bagged)
-bag_predictions <- predict(bagged, newdata = testing1, type = "class")
-table(testing1$y, bag_predictions)
+bag_predictions <- predict(bagged, newdata = testing)
+z_bag <- as.integer(bag_predictions >.4)
+table(testing$Low_weight, z_bag)
+
+pred <- prediction(bag_predictions, testing$Low_weight)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values))
+ggplot(roc.data, aes(x=fpr, ymin = 0, ymax = tpr)) +
+  geom_ribbon(alpha=0.2)+
+  geom_line(aes(y=tpr))+
+  ggtitle(paste0("ROC curve w/AUC=",auc))
+
+
 
 #Neural Networks
 
+require(RSNNS)
+x_train <- normalizeData(model.matrix(Low_weight ~ povrate + as.factor(Region) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) + Birth_order + as.factor(Ins_Eleg) + Num_preg, data = training))
 
+x_test <- normalizeData(model.matrix(Low_weight ~ povrate + as.factor(Region) + as.factor(Marital_st) + as.factor(Pren_care) + as.factor(Edu_level) + as.factor(Works) + Mother_age +age_sq + Number_visits  + as.factor(Last_baby_lives) + Birth_order + as.factor(Ins_Eleg) + Num_preg, data = testing))
 
-
-
-
-range(data$APGARH[is.NA])
-summary(data$Mother_age)
-sqldf("select count(*),CEDOCVE, avg(Weight),avg(Mother_age),avg(APGARH)
-from data
-group by CEDOCVE
-order by 1 desc")
-
-prems <- sqldf("select count(*) as Number,Mother_age as Edad, avg(Weight) as Peso,avg(APGARH) as Apgar
-      from data
-      where Weight < 2500
-      group by Mother_age
-      
-      order by 2 asc")
-age_table <- sqldf("select count(*) as Number,Mother_age as Edad, avg(Weight) as Peso,avg(APGARH) as Apgar
-      from data
-               group by Mother_age
-               order by 2 asc")
-
-age_prems <- sqldf("select age_table.Edad, prems.Number as Low_weight, 
-            age_table.Number as Total
-            from age_table
-            join prems on prems.Edad = age_table.Edad")
-names(age)
-age_prems$ratio<- as.numeric(age_prems$Low_weight/age_prems$Total)
-
-plot(age_prems$Edad[1:39],age_prems$ratio[1:39],type = "l")
-
+model<- elman(x_train, y = training$Low_weight, size=c(2,5), maxit = 100, inputsTest = x_test, targetsTest = testing$Low_weight)
 sqldf("select count(*),Mother_age, avg(Weight),avg(APGARH)
       from data
       group by Mother_age
